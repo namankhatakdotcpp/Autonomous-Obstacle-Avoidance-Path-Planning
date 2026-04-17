@@ -43,47 +43,36 @@ public class MazeGenerator : MonoBehaviour
         grid      = new bool[width, height];
         tempWalls = new bool[width, height];
 
-        // Initialize: all cells are walls
         for (int x = 0; x < width; x++)
             for (int y = 0; y < height; y++)
                 grid[x, y] = true;
 
-        // Carve passages
         CarvePassage(1, 1);
         grid[1, 1]                       = false;
         grid[width - 2, height - 2]      = false;
 
-        // After carving, mark ALL carved cells as paths - both odd and walls between them
+        // 🔍 DEBUG: Count walkable cells
+        int walkableCount = 0;
         for (int x = 0; x < width; x++)
+            for (int y = 0; y < height; y++)
+                if (!grid[x, y]) walkableCount++;
+        Debug.Log($"[Maze] Walkable cells: {walkableCount} / {width * height}");
+
+        // 🔍 VALIDATE: Ensure start and goal are in same connected region
+        var visited = new HashSet<int>();
+        if (!FloodFill(1, 1, visited))
+            Debug.LogError("[Maze] Start is isolated!");
+        
+        int startKey = 1 * width + 1;
+        int goalKey = (width - 2) * width + (height - 2);
+        if (!visited.Contains(goalKey))
         {
-            for (int y = 0; y < height; y++)
-            {
-                // If this cell was carved (set to false), keep it
-                // If not carved and it's between two carved cells, mark it as walkable
-                if (!grid[x, y]) continue; // Already a path
-                
-                // Check if this cell is adjacent to paths in both directions (corridor)
-                bool isWall = (x % 2 == 0 && y % 2 == 1) || (x % 2 == 1 && y % 2 == 0);
-                if (isWall)
-                {
-                    bool hasPathNeighbor = false;
-                    if (x > 0 && !grid[x-1, y]) hasPathNeighbor = true;
-                    if (x < width-1 && !grid[x+1, y]) hasPathNeighbor = true;
-                    if (y > 0 && !grid[x, y-1]) hasPathNeighbor = true;
-                    if (y < height-1 && !grid[x, y+1]) hasPathNeighbor = true;
-                    if (hasPathNeighbor) grid[x, y] = false; // Mark wall as path
-                }
-            }
+            Debug.LogError("[Maze] Goal is NOT reachable from start! Maze is broken!");
         }
-
-        // Debug: show walkability
-        int walkableCells = 0;
-        for (int x = 0; x < width; x++)
-            for (int y = 0; y < height; y++)
-                if (!grid[x, y]) walkableCells++;
-
-        Debug.Log($"[Maze] Grid: {walkableCells} walkable cells out of {width * height}");
-        Debug.Log($"[Maze] (1,1) walkable={IsWalkable(1, 1)}, ({width - 2},{height - 2}) walkable={IsWalkable(width - 2, height - 2)}");
+        else
+        {
+            Debug.Log($"[Maze] ✅ Connectivity verified: {visited.Count} cells reachable from start");
+        }
 
         BuildMeshObjects();
 
@@ -94,26 +83,70 @@ public class MazeGenerator : MonoBehaviour
     }
 
     // ── recursive backtracker ───────────────────────────────
+    // RULE: Only carve 2 steps away! (CELL -> WALL -> CELL)
     private void CarvePassage(int cx, int cy)
     {
-        grid[cx, cy] = false;
-        int[] dx = {  0,  0,  2, -2 };
-        int[] dy = {  2, -2,  0,  0 };
+        grid[cx, cy] = false;  // Mark current cell as path
+        int[] dx = {  0,  0,  2, -2 };  // Move in steps of 2
+        int[] dy = {  2, -2,  0,  0 };  // "2 away" pattern
         int[] dirs = { 0, 1, 2, 3 };
+        
+        // Fisher-Yates shuffle for random direction order
         for (int i = dirs.Length - 1; i > 0; i--)
         {
             int j = Random.Range(0, i + 1);
             int t = dirs[i]; dirs[i] = dirs[j]; dirs[j] = t;
         }
+        
         foreach (int d in dirs)
         {
-            int nx = cx + dx[d], ny = cy + dy[d];
+            int nx = cx + dx[d], ny = cy + dy[d];  // 2 steps away
+            // Only carve if 2-step target is unvisited (still a wall)
             if (nx > 0 && nx < width - 1 && ny > 0 && ny < height - 1 && grid[nx, ny])
             {
-                grid[cx + dx[d] / 2, cy + dy[d] / 2] = false;
+                // Carve the WALL between current and target
+                grid[cx + dx[d] / 2, cy + dy[d] / 2] = false;  // Middle cell
+                // Recursively carve from the new cell
                 CarvePassage(nx, ny);
             }
         }
+    }
+
+    // ── flood fill: verify connectivity ───────────────────
+    /// <summary>
+    /// BFS from (x, y) to find all reachable cells.
+    /// Returns false if starting cell is a wall, true otherwise.
+    /// </summary>
+    private bool FloodFill(int startX, int startY, HashSet<int> visited)
+    {
+        if (grid[startX, startY]) return false;  // Starting cell must be walkable
+        
+        var queue = new Queue<(int, int)>();
+        queue.Enqueue((startX, startY));
+        visited.Add(startX * width + startY);
+
+        int[] dx = { 0, 0, 1, -1 };
+        int[] dy = { 1, -1, 0, 0 };
+
+        while (queue.Count > 0)
+        {
+            var (x, y) = queue.Dequeue();
+            
+            for (int i = 0; i < 4; i++)
+            {
+                int nx = x + dx[i];
+                int ny = y + dy[i];
+                int key = nx * width + ny;
+                
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height && 
+                    !grid[nx, ny] && !visited.Contains(key))
+                {
+                    visited.Add(key);
+                    queue.Enqueue((nx, ny));
+                }
+            }
+        }
+        return true;
     }
 
     // ── geometry ────────────────────────────────────────────
@@ -166,13 +199,18 @@ public class MazeGenerator : MonoBehaviour
     }
 
     // ── coordinate helpers ──────────────────────────────────
+    // ── coordinate helpers ──────────────────────────────────
     public Vector3 GridToWorld(int gx, int gy, float yOffset = 0.5f)
         => new Vector3(gx * cellSize + cellSize * 0.5f, yOffset, gy * cellSize + cellSize * 0.5f);
 
     public Vector2Int WorldToGrid(Vector3 w)
-        => new Vector2Int(
-            Mathf.Clamp(Mathf.FloorToInt(w.x / cellSize), 0, width  - 1),
-            Mathf.Clamp(Mathf.FloorToInt(w.z / cellSize), 0, height - 1));
+    {
+        int x = Mathf.RoundToInt((w.x - cellSize * 0.5f) / cellSize);
+        int y = Mathf.RoundToInt((w.z - cellSize * 0.5f) / cellSize);
+        return new Vector2Int(
+            Mathf.Clamp(x, 0, width  - 1),
+            Mathf.Clamp(y, 0, height - 1));
+    }
 
     // ── walkability (combines permanent + temporary) ────────
     /// <summary>
@@ -182,7 +220,55 @@ public class MazeGenerator : MonoBehaviour
     public bool IsWalkable(int gx, int gy)
     {
         if (gx < 0 || gx >= width || gy < 0 || gy >= height) return false;
-        return !grid[gx, gy] && !tempWalls[gx, gy];
+        
+        // 🔥 FIX: Disable tempWalls during pathfinding
+        // This ensures A* always finds a path (maze is always solvable)
+        // Obstacle avoidance happens in RobotController, not in pathfinding
+        return !grid[gx, gy];  // Only check permanent walls
+    }
+
+    /// <summary>
+    /// Find a connected walkable cell near the target position.
+    /// If the target itself is walkable, return it.
+    /// Otherwise, search nearby cells in the connected region.
+    /// </summary>
+    public Vector2Int FindConnectedWalkable(Vector2Int target)
+    {
+        if (IsWalkable(target.x, target.y))
+            return target;
+        
+        // BFS to find nearest walkable cell connected to target
+        var queue = new Queue<Vector2Int>();
+        var visited = new HashSet<int>();
+        queue.Enqueue(target);
+        visited.Add(target.x * width + target.y);
+
+        int[] dx = { 0, 0, 1, -1 };
+        int[] dy = { 1, -1, 0, 0 };
+
+        while (queue.Count > 0)
+        {
+            var pos = queue.Dequeue();
+            
+            for (int i = 0; i < 4; i++)
+            {
+                int nx = pos.x + dx[i];
+                int ny = pos.y + dy[i];
+                int key = nx * width + ny;
+                
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height && !visited.Contains(key))
+                {
+                    visited.Add(key);
+                    if (IsWalkable(nx, ny))
+                        return new Vector2Int(nx, ny);
+                    queue.Enqueue(new Vector2Int(nx, ny));
+                }
+            }
+        }
+
+        // Fallback (shouldn't happen if maze is connected)
+        Debug.LogWarning($"[Maze] No connected walkable cell found near {target}! Returning (1,1)");
+        return new Vector2Int(1, 1);
     }
 
     /// <summary>

@@ -293,7 +293,30 @@ public class RobotController : MonoBehaviour
             return;
         }
 
-        var raw = pathfinder.FindPath(rb.position, goal);
+        // 🔥 CRITICAL FIX: Ensure start and goal are in the same connected region
+        Vector2Int startGridPos = maze.WorldToGrid(rb.position);
+        Vector2Int goalGridPos  = maze.WorldToGrid(goal);
+        
+        // Ensure both are in walkable space
+        startGridPos = maze.FindConnectedWalkable(startGridPos);
+        goalGridPos  = maze.FindConnectedWalkable(goalGridPos);
+        
+        Vector3 connectedStart = maze.GridToWorld(startGridPos.x, startGridPos.y);
+        Vector3 connectedGoal  = maze.GridToWorld(goalGridPos.x, goalGridPos.y);
+
+        // 🔍 VALIDATION: Check walkability before pathfinding
+        bool startWalkable = maze.IsWalkable(startGridPos.x, startGridPos.y);
+        bool goalWalkable = maze.IsWalkable(goalGridPos.x, goalGridPos.y);
+        Debug.Log($"[Path] START ({startGridPos.x},{startGridPos.y}): walkable={startWalkable} | GOAL ({goalGridPos.x},{goalGridPos.y}): walkable={goalWalkable}");
+
+        if (!startWalkable || !goalWalkable)
+        {
+            Debug.LogError($"❌ START or GOAL not walkable! Start={startWalkable}, Goal={goalWalkable}");
+            isMoving = false;
+            return;
+        }
+
+        var raw = pathfinder.FindPath(connectedStart, connectedGoal);
         currentPath = SmoothPath(raw);
         pathIndex   = currentPath.Count > 1 ? 1 : 0;
 

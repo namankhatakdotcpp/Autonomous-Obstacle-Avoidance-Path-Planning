@@ -36,56 +36,77 @@ public class AStarPathfinder : MonoBehaviour
         var neighbors = GetNeighbors(start.x, start.y);
         Debug.Log($"✅ Neighbors from {start}: count={neighbors.Count}");
         foreach (var (nx, ny, cost) in neighbors)
-            Debug.Log($"   → ({nx},{ny}) cost={cost} walkable={maze.IsWalkable(nx, ny)}");
+            Debug.Log($"   → ({nx},{ny}) cost={cost}");
 
-        var openList   = new List<Node>();
-        var closedSet  = new HashSet<int>(); // packed key: x * 1000 + y
-        var nodeMap    = new Dictionary<int, Node>();
+        var openList   = new List<Vector2Int>();
+        var gScore     = new Dictionary<int, float>();
+        var cameFrom   = new Dictionary<int, Vector2Int>();
+        var inOpenList = new HashSet<int>();
+        var closedSet  = new HashSet<int>();
 
-        var startNode = NewNode(start.x, start.y, 0f, goal);
-        openList.Add(startNode);
-        nodeMap[Pack(start.x, start.y)] = startNode;
+        int startKey = Pack(start.x, start.y);
+        openList.Add(start);
+        gScore[startKey] = 0f;
+        inOpenList.Add(startKey);
 
         int safety = 50000;
 
         while (openList.Count > 0 && safety-- > 0)
         {
-            // Pop lowest f
+            // Find node with lowest f-score
             int bestIdx = 0;
+            float bestF = Heuristic(openList[0].x, openList[0].y, goal.x, goal.y) + gScore[Pack(openList[0].x, openList[0].y)];
+            
             for (int i = 1; i < openList.Count; i++)
-                if (openList[i].f < openList[bestIdx].f) bestIdx = i;
+            {
+                int key = Pack(openList[i].x, openList[i].y);
+                float f = Heuristic(openList[i].x, openList[i].y, goal.x, goal.y) + gScore[key];
+                if (f < bestF)
+                {
+                    bestIdx = i;
+                    bestF = f;
+                }
+            }
 
-            Node current = openList[bestIdx];
+            Vector2Int current = openList[bestIdx];
+            int currentKey = Pack(current.x, current.y);
             openList.RemoveAt(bestIdx);
+            inOpenList.Remove(currentKey);
+            closedSet.Add(currentKey);
 
-            int key = Pack(current.x, current.y);
-            if (closedSet.Contains(key)) continue;
-            closedSet.Add(key);
-
-            if (current.x == goal.x && current.y == goal.y) {
-                var path = ReconstructPath(current);
-                Debug.Log($"✅ A* PATH FOUND: {path.Count} waypoints");
+            if (current.x == goal.x && current.y == goal.y)
+            {
+                var path = ReconstructPath(cameFrom, goal, start);
+                Debug.Log($"✅ A* PATH FOUND: {path.Count} waypoints after {50000 - safety} iterations");
                 return path;
             }
 
             foreach (var (nx, ny, cost) in GetNeighbors(current.x, current.y))
             {
-                int nkey = Pack(nx, ny);
-                if (closedSet.Contains(nkey)) continue;
+                Vector2Int neighbor = new Vector2Int(nx, ny);
+                int neighborKey = Pack(nx, ny);
 
-                float newG = current.g + cost;
-
-                if (nodeMap.TryGetValue(nkey, out Node existing) && existing.g <= newG)
+                if (closedSet.Contains(neighborKey))
                     continue;
 
-                var neighbor = NewNode(nx, ny, newG, goal);
-                neighbor.parent = current;
-                nodeMap[nkey] = neighbor;
-                openList.Add(neighbor);
+                float newG = gScore[currentKey] + cost;
+
+                // If we haven't seen this neighbor, or found a better path
+                if (!gScore.ContainsKey(neighborKey) || newG < gScore[neighborKey])
+                {
+                    gScore[neighborKey] = newG;
+                    cameFrom[neighborKey] = current;
+
+                    if (!inOpenList.Contains(neighborKey))
+                    {
+                        openList.Add(neighbor);
+                        inOpenList.Add(neighborKey);
+                    }
+                }
             }
         }
 
-        Debug.LogError($"❌ A* NO PATH FOUND - openList empty or safety limit hit");
+        Debug.LogError($"❌ A* NO PATH FOUND - openList empty after {50000 - safety} iterations");
         return new List<Vector3>(); // no path
     }
 
@@ -100,7 +121,7 @@ public class AStarPathfinder : MonoBehaviour
         };
     }
 
-    private int Pack(int x, int y) => x * 1000 + y;
+    private int Pack(int x, int y) => x * maze.GridWidth + y;
 
     private float Heuristic(int x1, int y1, int x2, int y2)
     {
@@ -130,7 +151,10 @@ public class AStarPathfinder : MonoBehaviour
             int nx = x + dir.x;
             int ny = y + dir.y;
 
-            if (!maze.IsWalkable(nx, ny)) continue;
+            bool walkable = maze.IsWalkable(nx, ny);
+            Debug.Log($"  Neighbor ({nx},{ny}): walkable={walkable}");
+            
+            if (!walkable) continue;
 
             result.Add((nx, ny, 1f));
         }
@@ -138,14 +162,23 @@ public class AStarPathfinder : MonoBehaviour
         return result;
     }
 
-    private List<Vector3> ReconstructPath(Node node)
+    private List<Vector3> ReconstructPath(Dictionary<int, Vector2Int> cameFrom, Vector2Int goal, Vector2Int start)
     {
         var path = new List<Vector3>();
-        while (node != null)
+        Vector2Int current = goal;
+
+        while (current != start)
         {
-            path.Add(maze.GridToWorld(node.x, node.y));
-            node = node.parent;
+            path.Add(maze.GridToWorld(current.x, current.y));
+            int key = Pack(current.x, current.y);
+            
+            if (!cameFrom.ContainsKey(key))
+                break; // Safety check
+
+            current = cameFrom[key];
         }
+
+        path.Add(maze.GridToWorld(start.x, start.y));
         path.Reverse();
         return path;
     }
