@@ -72,7 +72,6 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
-        startButton      ?.onClick.AddListener(StartGame);
         regenerateButton ?.onClick.AddListener(RegenerateMaze);
         mazeSizeSlider   ?.onValueChanged.AddListener(OnSizeSliderChanged);
 
@@ -86,8 +85,16 @@ public class GameManager : MonoBehaviour
         if (running)
         {
             elapsedTime += Time.deltaTime;
-            if (timeText)
-                timeText.text = $"Time: {elapsedTime:F2}s";
+
+            if (timeText != null)
+            {
+                timeText.text = "Time: " + elapsedTime.ToString("F2") + "s";
+            }
+            else
+            {
+                Debug.LogError("timeText is NULL");
+            }
+
             UpdateUI();
 
             // Fail on timeout (2 minutes)
@@ -131,12 +138,6 @@ public class GameManager : MonoBehaviour
         elapsedTime = 0f;
     }
 
-    public void StartGame()
-    {
-        elapsedTime = 0f;
-        running = true;
-    }
-
     public void StartSimulation()
     {
         if (successPanel) successPanel.SetActive(false);
@@ -157,6 +158,9 @@ public class GameManager : MonoBehaviour
 
     public void SetGoalReached()
     {
+        if (goalReached) return;
+
+        goalReached = true;
         running = false;
         if (statusText) statusText.text = "Goal Reached!";
         if (successPanel) successPanel.SetActive(true);
