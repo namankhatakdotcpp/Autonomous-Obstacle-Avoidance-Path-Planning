@@ -72,7 +72,7 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
-        startButton      ?.onClick.AddListener(StartSimulation);
+        startButton      ?.onClick.AddListener(StartGame);
         regenerateButton ?.onClick.AddListener(RegenerateMaze);
         mazeSizeSlider   ?.onValueChanged.AddListener(OnSizeSliderChanged);
 
@@ -87,7 +87,7 @@ public class GameManager : MonoBehaviour
         {
             elapsedTime += Time.deltaTime;
             if (timeText)
-                timeText.text = "Time: " + elapsedTime.ToString("F2") + "s";
+                timeText.text = $"Time: {elapsedTime:F2}s";
             UpdateUI();
 
             // Fail on timeout (2 minutes)
@@ -200,7 +200,6 @@ public class GameManager : MonoBehaviour
     // ── UI ───────────────────────────────────────────────────
     private void UpdateUI()
     {
-        if (timeText)      timeText.text      = $"Time: {elapsedTime:F1}s";
         UpdateCollisionUI();
         if (replanText)    replanText.text    = $"Replans: {robot?.ReplanCount ?? 0}";
         if (scoreText)     scoreText.text     = $"Score: {GetScore():F0}";
